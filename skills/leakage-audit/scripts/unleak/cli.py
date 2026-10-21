@@ -7,7 +7,7 @@ import os
 import sys
 
 from . import __version__, report, rules
-from .checker import check_file, iter_files
+from .checker import check_paths
 
 COMMANDS = {"check", "data", "rules", "explain", "hook"}
 SEVERITIES = ("info", "warning", "error")
@@ -58,19 +58,12 @@ def cmd_check(args) -> int:
     fail_on = args.fail_on or cfg.get("fail-on", "warning")
     exclude = _split(cfg.get("exclude"))
 
-    findings, errors, files = [], [], 0
-    for path in iter_files(args.paths or ["."]):
-        if any(part in path for part in exclude):
-            continue
+    paths = args.paths or ["."]
+    for path in paths:
         if not os.path.exists(path):
             print(f"unleak: {path}: no such file or directory", file=sys.stderr)
             return 2
-        files += 1
-        found, err = check_file(path)
-        if err is not None:
-            errors.append(err)
-            continue
-        findings.extend(found)
+    findings, errors, files = check_paths(paths, exclude)
 
     order = {s: i for i, s in enumerate(SEVERITIES)}
     findings = [

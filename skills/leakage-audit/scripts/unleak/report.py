@@ -34,9 +34,10 @@ def _loc(f: Finding) -> str:
 
 
 def _rel_loc(rel: dict) -> str:
-    if rel.get("cell") is not None:
-        return f"cell {rel['cell']}:{rel['cell_line']}"
-    return f"line {rel['line']}"
+    where = f"cell {rel['cell']}:{rel['cell_line']}" if rel.get("cell") is not None else f"line {rel['line']}"
+    if rel.get("path"):
+        return f"{rel['path']} {where}"
+    return where
 
 
 def summary_counts(findings: list[Finding]) -> Counter:
@@ -127,13 +128,13 @@ def sarif(findings: list[Finding], errors: list[FileError]) -> str:
                 }
             }],
         }
-        if f.related and f.cell is None:
+        if f.related:
             result["relatedLocations"] = [{
                 "id": i,
                 "message": {"text": rel["message"]},
                 "physicalLocation": {
-                    "artifactLocation": {"uri": _uri(f.path)},
-                    "region": {"startLine": rel["line"]},
+                    "artifactLocation": {"uri": _uri(rel.get("path") or f.path)},
+                    "region": {"startLine": rel["line"] if rel.get("cell") is None else 1},
                 },
             } for i, rel in enumerate(f.related)]
         results.append(result)

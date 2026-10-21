@@ -17,6 +17,7 @@ from __future__ import annotations
 import ast
 import builtins
 import itertools
+import os
 from dataclasses import dataclass, field, replace
 
 from . import knowledge as K
@@ -35,6 +36,10 @@ SCALAR_BUILTINS = {
 }
 SCALAR_ATTRS = {"shape", "size", "ndim", "dtypes", "dtype", "empty", "name", "nbytes"}
 VALUE_ATTRS = {"values", "T", "array", "str", "dt", "cat", "index"}
+WRITE_METHODS = {"to_csv", "to_parquet", "to_pickle", "to_feather", "to_json", "to_excel", "to_hdf",
+                 "to_orc", "to_stata", "write_csv", "write_parquet"}
+WRITE_FUNCS = {"save": ("numpy", "np", "torch"), "savez": ("numpy", "np"), "savez_compressed": ("numpy", "np"),
+               "savetxt": ("numpy", "np"), "dump": ("joblib", "pickle")}
 # sklearn Bunch fields: dataset.data / dataset.target are arrays, not columns
 BUNCH_ATTRS = {"data", "target", "images", "feature_names", "target_names", "frame",
                "DESCR", "filename", "data_module", "cov_train", "cov_test"}
@@ -147,6 +152,17 @@ class FitEvent:
     method: str
     node: ast.AST
     data: Val
+    path: str | None = None  # set when the fit happened in another file
+
+
+@dataclass
+class Written:
+    """Data saved to disk: df.to_csv('clean.csv'), np.save('X.npy', X)..."""
+
+    path: str
+    events: list  # FitEvents that shaped the data
+    traits: frozenset
+    source: str | None = None  # file that wrote it
 
 
 @dataclass
@@ -192,7 +208,8 @@ class RawFinding:
     rule: str
     node: ast.AST
     message: str
-    related: list = field(default_factory=list)  # [(line, text)]
+    related: list = field(default_factory=list)  # [(line, text, path or None)]
+    path: str | None = None  # the file the node belongs to, if not the analysed one
 
 
 # --- helpers ---------------------------------------------------------------
@@ -293,8 +310,12 @@ def shift_context(node: ast.AST, stop: ast.AST) -> tuple[int, bool]:
 
 
 class Analyzer:
-    def __init__(self, tree: ast.Module):
+    def __init__(self, tree: ast.Module, path: str | None = None, external: dict | None = None):
         self.tree = tree
+        self.path = path
+        # normalised path or basename -> Written records from other files
+        self.external = external or {}
+        self.writes: list[Written] = []
         self.ids = itertools.count(1)
         self.imports: dict[str, str] = {}
         self.function_names: set[str] = set()
@@ -331,12 +352,13 @@ class Analyzer:
             elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                 self.function_names.add(node.name)
 
-    def report(self, rule: str, node: ast.AST, message: str, related: list | None = None) -> None:
-        key = (rule, getattr(node, "lineno", 0))
+    def report(self, rule: str, node: ast.AST, message: str, related: list | None = None,
+               path: str | None = None) -> None:
+        key = (rule, getattr(node, "lineno", 0), path)
         if key in self._reported:
             return
         self._reported.add(key)
-        self.findings.append(RawFinding(rule, node, message, related or []))
+        self.findings.append(RawFinding(rule, node, message, related or [], path))
 
     # -- cross-statement rules --
     def _finalize(self) -> None:
@@ -364,7 +386,10 @@ class Analyzer:
                 rule = rule_for[ev.kind]
                 if mixed and has_train and ev.kind in (K.TRANSFORMER, K.UNKNOWN_TRANSFORMER, K.STAT, K.UNDERSAMPLER):
                     rule = "UL107"
-                self.report(rule, ev.node, self._fit_message(rule, ev), [self._where(ob)])
+                message = self._fit_message(rule, ev)
+                if ev.path:
+                    message += f"; the result is saved to disk and split in {self.path or 'another file'}"
+                self.report(rule, ev.node, message, [self._where(ob)], path=ev.path)
                 break
         for node, evalv in self.es_candidates:
             test_tags = {t for t in evalv.tags if t.role == "test"}
@@ -384,12 +409,19 @@ class Analyzer:
                     "so the test set is being used for model selection",
                 )
 
-    @staticmethod
-    def _where(ob: Obs) -> tuple[int, str]:
+    def _where(self, ob: Obs) -> tuple[int, str, str | None]:
         line = getattr(ob.node, "lineno", 0)
         text = {"split": "rows are split into train/test here",
                 "cv": "data is cross-validated here"}.get(ob.what, "held-out rows are used here")
-        return (line, text)
+        return (line, text, self.path)
+
+    def lookup_written(self, path: str) -> list[Written]:
+        if self.path:
+            full = os.path.normpath(os.path.join(os.path.dirname(self.path), path))
+            if full in self.external:
+                return self.external[full]
+        hits = self.external.get(os.path.basename(path), [])
+        return hits if len({w.path for w in hits}) == 1 else []
 
     @staticmethod
     def _fit_message(rule: str, ev: FitEvent) -> str:
@@ -1058,7 +1090,12 @@ class Scope:
             path = next((v.const for v in pos if isinstance(v.const, str)), None)
             role = K.path_role(path) if path else None
             v = self.new_root(name, role)
+            if path:
+                v = self._import_written(v, path)
             return v
+        if name in WRITE_FUNCS and qual.split(".", 1)[0] in WRITE_FUNCS[name]:
+            self._record_write(pos, kw, name)
+            return NOTHING
         if name in K.DATA_CONSTRUCTORS or name in ("concat", "merge", "where", "get_dummies"):
             return union(*allv)
         return union(*allv)
@@ -1110,6 +1147,11 @@ class Scope:
         res = union(objv, *allv)
         if "window_obj" in res.traits:
             res = replace(res, traits=res.traits - {"window_obj"})
+        if objv.roots and m in WRITE_METHODS:
+            target = pos[0] if pos else kw.get("path_or_buf", kw.get("path", NOTHING))
+            if isinstance(target.const, str):
+                self._save(target.const, objv)
+            return NOTHING
         if objv.roots:
             if "window_obj" in objv.traits:
                 # df.rolling(7).mean(), df.groupby('g')['x'].mean(): not a global statistic
@@ -1166,6 +1208,35 @@ class Scope:
             if is_true(kwarg(n, "inplace")):
                 return NOTHING
         return res
+
+    # -- files written here and read elsewhere --
+    def _save(self, path: str, data: Val) -> None:
+        events = [self.an.fit_events[i] for i in sorted(data.fits) if i in self.an.fit_events]
+        events = [replace(e, path=e.path or self.an.path) for e in events
+                  if e.kind not in (K.MODEL, K.SEARCH, K.STATELESS, K.ENCODER)]
+        if events or "timeseries" in data.traits:
+            self.an.writes.append(Written(path, events, data.traits & {"timeseries"}, self.an.path))
+
+    def _record_write(self, pos: list, kw: dict, name: str) -> None:
+        if name in ("save", "savez", "savez_compressed", "savetxt") and pos and isinstance(pos[0].const, str):
+            if len(pos) > 1:
+                self._save(pos[0].const, union(*pos[1:]))
+        elif name == "dump" and len(pos) > 1 and isinstance(pos[1].const, str):
+            self._save(pos[1].const, pos[0])
+
+    def _import_written(self, v: Val, path: str) -> Val:
+        written = self.an.lookup_written(path)
+        if not written:
+            return v
+        ids, traits = set(), set()
+        data = Val(roots=v.roots)
+        for w in written:
+            traits |= w.traits
+            for ev in w.events:
+                new = FitEvent(next(self.an.ids), ev.kind, ev.cls, ev.method, ev.node, data, path=ev.path)
+                self.an.fit_events[new.id] = new
+                ids.add(new.id)
+        return replace(v, fits=v.fits | ids, traits=v.traits | traits)
 
     def _guess_kind(self, name: str, method: str) -> str:
         low = name.lower()
@@ -1514,5 +1585,7 @@ class Scope:
         return any(ca.index <= frame.index or ca.id in frame.added for ca in cas)
 
 
-def analyze(tree: ast.Module) -> list[RawFinding]:
-    return Analyzer(tree).run()
+def analyze(tree: ast.Module, path: str | None = None, external: dict | None = None) -> Analyzer:
+    an = Analyzer(tree, path, external)
+    an.run()
+    return an
