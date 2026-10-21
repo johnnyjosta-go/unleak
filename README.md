@@ -165,7 +165,7 @@ warning  UD004  column 'days_since_cancellation' alone separates 'churned' with 
 GitHub Action, with annotations on the PR diff and a summary table:
 
 ```yaml
-- uses: actions/checkout@v4
+- uses: actions/checkout@v7
 - uses: johnnyjosta-go/unleak@v0
   with:
     paths: notebooks src
