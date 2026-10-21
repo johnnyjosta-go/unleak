@@ -427,6 +427,10 @@ class Analyzer:
     def _fit_message(rule: str, ev: FitEvent) -> str:
         if ev.kind == K.STAT or ev.cls in K.SUPERVISED_STAT_FUNCS or ev.cls in ("corr", "corrwith"):
             call = f"`{src(ev.node, 50)}`"
+        elif ev.method == "concat":  # hand-rolled resampling
+            call = ev.cls[0].upper() + ev.cls[1:]
+            if rule == "UL103":
+                return f"{call}: duplicated minority rows end up on both sides of the split"
         else:
             call = f"{ev.cls}.{ev.method}()"
         return {
@@ -435,7 +439,8 @@ class Analyzer:
             "UL103": f"{call} creates synthetic samples from rows that end up in the evaluation data",
             "UL104": f"{call} resamples before the split, so the evaluation data no longer has the real class balance",
             "UL105": f"{call} learns target statistics from rows that are later used for evaluation",
-            "UL106": f"{call} is computed over all rows and then used to fill or scale features before the split",
+            "UL106": f"{call} is computed over all rows, including rows that later become test data, "
+                     "and is used to transform the features before the split",
             "UL107": f"{call} is fitted on train and test data combined",
         }[rule]
 
@@ -827,8 +832,12 @@ class Scope:
     ex_Set = _seq
 
     def ex_Compare(self, n: ast.Compare) -> Val:
-        v = union(self.expr(n.left), *(self.expr(c) for c in n.comparators))
-        return replace(v, traits=v.traits | {"mask"}, col=None)
+        left = self.expr(n.left)
+        v = union(left, *(self.expr(c) for c in n.comparators))
+        traits = v.traits | {"mask"}
+        if left.col is not None:
+            traits |= {f"cmpcol:{left.col[1]}"}
+        return replace(v, traits=traits, col=None)
 
     def ex_BoolOp(self, n: ast.BoolOp) -> Val:
         v = union(*(self.expr(x) for x in n.values))
@@ -912,14 +921,48 @@ class Scope:
             if idx is NOTHING:
                 continue
             if "mask" in idx.traits:
-                base = replace(base, tags=base.tags | idx.tags)
+                cls = {t[7:] for t in idx.traits if isinstance(t, str) and t.startswith("cmpcol:")} & self.targets
+                base = replace(base, tags=base.tags | idx.tags,
+                               traits=base.traits | {f"classfilter:{c}" for c in cls})
             else:
                 base = replace(base.data_only(), tags=base.tags | idx.tags, fits=base.fits | idx.fits,
                                traits=base.traits | (idx.traits - {"mask"}),
                                roots=base.roots | idx.roots)
         if not keeps_columns and base.frame is not None:
             base = replace(base, frame=replace(base.frame, unknown=True))
+        if isinstance(sl_node, ast.Slice) or (is_loc and isinstance(row_node, ast.Slice)):
+            base = self._downsized(base)
         return base.data_only() if base.roots else base
+
+    def _downsized(self, v: Val, up: bool = False) -> Val:
+        """A class-filtered subset that was cut down (or blown up) to a chosen size."""
+        cls = [t[12:] for t in v.traits if isinstance(t, str) and t.startswith("classfilter:")]
+        if not cls:
+            return v
+        mark = "upsampled" if up else "downsampled"
+        return replace(v, traits=v.traits | {f"{mark}:{c}" for c in cls})
+
+    def _rebalance_event(self, n: ast.Call, parts: list[Val]) -> Val:
+        """pd.concat of class subsets where one was resized: manual over/undersampling."""
+        joined = union(*parts)
+        by_col: dict[str, int] = {}
+        for p in parts:
+            for t in p.traits:
+                if isinstance(t, str) and t.startswith("classfilter:"):
+                    by_col[t[12:]] = by_col.get(t[12:], 0) + 1
+        for col, count in by_col.items():
+            up = any(f"upsampled:{col}" in p.traits for p in parts)
+            down = any(f"downsampled:{col}" in p.traits for p in parts)
+            if count >= 2 and (up or down):
+                kind = K.OVERSAMPLER if up else K.UNDERSAMPLER
+                how = "upsampled with replacement" if up else "cut down"
+                ev = FitEvent(next(self.an.ids), kind, f"manual resampling of '{col}' ({how})", "concat", n,
+                              replace(joined, traits=EMPTY))
+                self.an.fit_events[ev.id] = ev
+                drop = {t for t in joined.traits if isinstance(t, str)
+                        and t.split(":", 1)[0] in ("classfilter", "downsampled", "upsampled")}
+                return replace(joined, fits=joined.fits | {ev.id}, traits=joined.traits - drop)
+        return joined
 
     def _colset(self, v: Val):
         if isinstance(v.const, tuple):
@@ -1096,6 +1139,11 @@ class Scope:
         if name in WRITE_FUNCS and qual.split(".", 1)[0] in WRITE_FUNCS[name]:
             self._record_write(pos, kw, name)
             return NOTHING
+        if name == "concat" and pos and pos[0].seq:
+            return self._rebalance_event(n, list(pos[0].seq))
+        if name == "resample" and qual.startswith("sklearn") and pos:
+            up = is_true(kwarg(n, "replace"))
+            return self._downsized(union(pos[0]), up=up)
         if name in K.DATA_CONSTRUCTORS or name in ("concat", "merge", "where", "get_dummies"):
             return union(*allv)
         return union(*allv)
@@ -1163,7 +1211,9 @@ class Scope:
                 if m == "rolling" and is_true(kwarg(n, "center")):
                     traits |= {"centered"}
                 return replace(objv.data_only(), traits=traits, roots=res.roots, tags=res.tags, fits=res.fits)
-            if m in K.PANDAS_STAT_METHODS and "prediction" not in objv.traits:
+            missing_rate = (isinstance(objnode, ast.Call) and isinstance(objnode.func, ast.Attribute)
+                            and objnode.func.attr in ("isnull", "isna", "notnull", "notna", "duplicated"))
+            if m in K.PANDAS_STAT_METHODS and "prediction" not in objv.traits and not missing_rate:
                 if self._per_row(kwarg(n, "axis") or (n.args[0] if n.args and m != "quantile" else None)):
                     return replace(res, col=None, frame=None)
                 return self.stat_event(n, m, objv, supervised=False, extra=allv)
@@ -1175,6 +1225,11 @@ class Scope:
                 res = replace(res, traits=res.traits | {"timeseries"}, col=objv.col)
             elif m in K.RANDOM_SUBSET_METHODS:
                 res = replace(res, traits=res.traits | {"random_subset"}, frame=objv.frame, col=objv.col)
+                frac = kwarg(n, "frac")
+                if kwarg(n, "n") is not None or n.args or (isinstance(frac, ast.Constant) and frac.value != 1):
+                    res = self._downsized(res, up=is_true(kwarg(n, "replace")))
+            elif m == "head" and objv.traits:
+                res = self._downsized(replace(res, frame=objv.frame))
             elif m == "pop":
                 c = pos[0].const if pos else None
                 if isinstance(c, str):
