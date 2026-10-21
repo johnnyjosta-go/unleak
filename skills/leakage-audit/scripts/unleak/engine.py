@@ -156,6 +156,14 @@ class FitEvent:
 
 
 @dataclass
+class Summary:
+    """What calling a helper function does to its arguments."""
+
+    traits: frozenset
+    fits: list  # [(FitEvent, param indices whose data the step was fitted on)]
+
+
+@dataclass
 class Written:
     """Data saved to disk: df.to_csv('clean.csv'), np.save('X.npy', X)..."""
 
@@ -324,6 +332,7 @@ class Analyzer:
         self.es_candidates: list[tuple[ast.AST, Val]] = []
         self.evals: list[Val] = []
         self.loops: dict[int, Loop] = {}
+        self.summaries: dict[str, Summary] = {}
         self.findings: list[RawFinding] = []
         self._reported: set = set()
         self.pair_seen: set = set()
@@ -332,11 +341,17 @@ class Analyzer:
     def run(self) -> list[RawFinding]:
         add_parents(self.tree)
         self._collect_names()
-        module = Scope(self, self.tree.body)
-        module.run()
+        consts = Scope(self, [])
+        for st in self.tree.body:  # TARGET = "price", FEATURES = [...] for functions
+            if isinstance(st, ast.Assign) and isinstance(st.value, (ast.Constant, ast.List, ast.Tuple)):
+                consts.stmt(st)
+        # Helpers first, so calls to them carry what they do to their arguments.
         for fn in ast.walk(self.tree):
             if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                Scope(self, fn.body, parent=module, args=fn.args).run()
+                scope = Scope(self, fn.body, parent=consts, args=fn.args)
+                scope.run()
+                self.summaries.setdefault(fn.name, scope.summary())
+        Scope(self, self.tree.body).run()
         self._finalize()
         return self.findings
 
@@ -459,14 +474,31 @@ class Scope:
         self.targets: set[str] = set()
         self.entity_cols: list[tuple[frozenset, str]] = []
         self.ungrouped_reported = False
+        self.returns: list[Val] = []
+        self.param_roots: dict[int, int] = {}
         if parent is not None:
             for k, v in parent.env.items():
                 if v.const is not None:
                     self.env[k] = v
         if args is not None:
-            for a in args.posonlyargs + args.args + args.kwonlyargs:
+            for i, a in enumerate(args.posonlyargs + args.args + args.kwonlyargs):
                 if a.arg not in ("self", "cls"):
                     self.env[a.arg] = self.new_root(a.arg)
+                    for r in self.env[a.arg].roots:
+                        self.param_roots[r] = i
+
+    def summary(self) -> Summary:
+        ret = union(*self.returns)
+        fits = []
+        for fid in sorted(ret.fits):
+            ev = self.an.fit_events.get(fid)
+            if ev is None or ev.kind in (K.MODEL, K.SEARCH, K.STATELESS, K.ENCODER):
+                continue
+            if ev.data.tags:
+                continue  # fitted on one side of a split made inside the helper: judged there
+            idx = tuple(sorted({self.param_roots[r] for r in ev.data.roots if r in self.param_roots}))
+            fits.append((ev, idx))
+        return Summary(ret.traits & {"timeseries", "random_subset"}, fits)
 
     # -- driver --
     def run(self) -> None:
@@ -535,6 +567,15 @@ class Scope:
         if hasattr(builtins, name):
             return Val(mod="builtins." + name)
         v = self.new_root(name)
+        if "." in name and not v.tags:
+            # data_train.data / self.X_test: the object's split role carries over
+            head = name.split(".", 1)[0]
+            hv = self.env.get(head)
+            role = K.split_role(head)
+            if hv is not None and hv.tags:
+                v = replace(v, tags=hv.tags)
+            elif role:
+                v = replace(v, tags=frozenset({Tag(("name", role), role)}))
         self.env[name] = v
         return v
 
@@ -585,7 +626,7 @@ class Scope:
         self.expr(st.value)
 
     def st_Return(self, st: ast.Return) -> None:
-        self.expr(st.value)
+        self.returns.append(self.expr(st.value))
 
     def st_For(self, st: ast.For) -> None:
         it = self.expr(st.iter)
@@ -869,8 +910,6 @@ class Scope:
                 return Val(const=tuple(sorted(f.select)) if f.select is not None else ColumnSet(f.dropped))
             return NOTHING
         if n.attr in K.COLUMN_PRESERVING_ATTRS or n.attr in VALUE_ATTRS:
-            if n.attr == "iloc":
-                return replace(base, frame=replace(base.frame, unknown=True) if base.frame else None)
             return base
         parent = getattr(n, "_ul_parent", None)
         is_method = isinstance(parent, ast.Call) and parent.func is n
@@ -894,6 +933,10 @@ class Scope:
             return NOTHING
         sl_node = n.slice
         is_loc = isinstance(n.value, ast.Attribute) and n.value.attr == "loc"
+        if (isinstance(n.value, ast.Attribute) and n.value.attr == "iloc" and isinstance(sl_node, ast.Tuple)
+                and base.frame is not None):
+            base = replace(base, frame=replace(base.frame, unknown=True))  # columns picked by position
+            sl_node = sl_node.elts[0]
         col_node = sl_node
         row_node = None
         if is_loc and isinstance(sl_node, ast.Tuple) and len(sl_node.elts) == 2:
@@ -1104,6 +1147,8 @@ class Scope:
             return self.cv_call(n)
         pos, kw = self.eval_args(n)
         allv = pos + list(kw.values())
+        if qual == name and name in self.an.summaries:
+            return self.call_helper(n, name, pos, kw)
         if name in K.METRIC_FUNCS:
             return self.eval_event(n, union(*allv))
         if name in K.SUPERVISED_STAT_FUNCS and pos:
@@ -1263,6 +1308,21 @@ class Scope:
             if is_true(kwarg(n, "inplace")):
                 return NOTHING
         return res
+
+    def call_helper(self, n: ast.Call, name: str, pos: list, kw: dict) -> Val:
+        summ = self.an.summaries[name]
+        res = union(*pos, *kw.values())
+        if not res.roots:
+            res = self.new_root(name)
+        fits = set()
+        for ev, idx in summ.fits:
+            data = union(*[pos[i] for i in idx if i < len(pos)]) if idx else res
+            if not data.roots:
+                data = res
+            new = FitEvent(next(self.an.ids), ev.kind, ev.cls, ev.method, ev.node, data, path=ev.path)
+            self.an.fit_events[new.id] = new
+            fits.add(new.id)
+        return replace(res, fits=res.fits | fits, traits=res.traits | summ.traits)
 
     # -- files written here and read elsewhere --
     def _save(self, path: str, data: Val) -> None:
