@@ -2,7 +2,7 @@ name: Release
 
 on:
   push:
-    tags: ["v*"]
+    tags: ["v*.*.*"]  # version tags only; the floating v0 tag for the Action does not publish
 
 jobs:
   build:

@@ -46,3 +46,27 @@ jobs:
           node-version: "22"
       - name: Validate the Claude Code plugin and marketplace
         run: npx -y @anthropic-ai/claude-code plugin validate . --strict
+
+  action:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: The action fails on leaky code
+        id: leaky
+        uses: ./
+        continue-on-error: true
+        with:
+          paths: examples/demo_churn.py
+          fail-on: error
+      - name: Check that it did fail
+        if: steps.leaky.outcome != 'failure'
+        run: exit 1
+      - name: The action passes on clean code and writes SARIF
+        uses: ./
+        with:
+          paths: tests/cases/clean_pipeline_cv.py
+          sarif-file: unleak.sarif
+      - run: test -s unleak.sarif
