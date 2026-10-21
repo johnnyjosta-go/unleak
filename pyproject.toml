@@ -34,9 +34,9 @@ dev = ["pytest>=7.0", "pandas>=1.5", "numpy>=1.22", "ruff>=0.5"]
 unleak = "unleak.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/OWNER/unleak"
-Issues = "https://github.com/OWNER/unleak/issues"
-Changelog = "https://github.com/OWNER/unleak/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/johnnyjosta-go/unleak"
+Issues = "https://github.com/johnnyjosta-go/unleak/issues"
+Changelog = "https://github.com/johnnyjosta-go/unleak/blob/main/CHANGELOG.md"
 
 [tool.hatch.version]
 path = "skills/leakage-audit/scripts/unleak/__init__.py"

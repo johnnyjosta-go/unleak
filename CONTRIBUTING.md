@@ -9,7 +9,7 @@ Thanks for helping make ML results more trustworthy. The most valuable contribut
 ## Development setup
 
 ```bash
-git clone https://github.com/OWNER/unleak && cd unleak
+git clone https://github.com/johnnyjosta-go/unleak && cd unleak
 python -m venv .venv && . .venv/bin/activate
 pip install -e ".[dev]"
 pytest                                   # core tests, Python 3.10+

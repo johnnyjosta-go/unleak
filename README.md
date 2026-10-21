@@ -13,7 +13,7 @@
 <p align="center">
   <a href="https://pypi.org/project/unleak/"><img alt="PyPI" src="https://img.shields.io/pypi/v/unleak?color=0ea5e9"></a>
   <a href="https://pypi.org/project/unleak/"><img alt="Python" src="https://img.shields.io/pypi/pyversions/unleak"></a>
-  <a href="https://github.com/OWNER/unleak/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/OWNER/unleak/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/johnnyjosta-go/unleak/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/johnnyjosta-go/unleak/actions/workflows/ci.yml/badge.svg"></a>
   <a href="#use-it-with-your-coding-agent"><img alt="Claude Code plugin" src="https://img.shields.io/badge/Claude_Code-plugin-d97757"></a>
   <a href="#use-it-with-your-coding-agent"><img alt="Agent Skills" src="https://img.shields.io/badge/Agent_Skills-compatible-6366f1"></a>
   <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/license-MIT-22c55e"></a>
@@ -67,7 +67,7 @@ unleak check train.py notebooks/
 No pip at all? The analyzer is pure standard library:
 
 ```bash
-git clone https://github.com/OWNER/unleak
+git clone https://github.com/johnnyjosta-go/unleak
 python3 unleak/skills/leakage-audit/scripts/run_unleak.py check path/to/your/project
 ```
 
@@ -80,7 +80,7 @@ and a fixed example. Silence a deliberate case with `# unleak: ignore[UL103]` on
 ### Claude Code: plugin with skill + automatic check on every write
 
 ```
-/plugin marketplace add OWNER/unleak
+/plugin marketplace add johnnyjosta-go/unleak
 /plugin install unleak@unleak
 ```
 
@@ -110,7 +110,7 @@ You get two things:
 The skill follows the open [Agent Skills](https://agentskills.io) format:
 
 ```bash
-npx skills add OWNER/unleak
+npx skills add johnnyjosta-go/unleak
 ```
 
 or copy [`skills/leakage-audit`](skills/leakage-audit) into the skills folder your agent reads (for
@@ -166,7 +166,7 @@ GitHub Action, with annotations on the PR diff and a summary table:
 
 ```yaml
 - uses: actions/checkout@v4
-- uses: OWNER/unleak@v0
+- uses: johnnyjosta-go/unleak@v0
   with:
     paths: notebooks src
     fail-on: error        # error | warning | info | never
@@ -175,7 +175,7 @@ GitHub Action, with annotations on the PR diff and a summary table:
 [pre-commit](https://pre-commit.com):
 
 ```yaml
-- repo: https://github.com/OWNER/unleak
+- repo: https://github.com/johnnyjosta-go/unleak
   rev: v0.1.0
   hooks:
     - id: unleak

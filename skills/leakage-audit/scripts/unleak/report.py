@@ -9,7 +9,7 @@ from collections import Counter
 from . import __version__, rules
 from .checker import FileError, Finding
 
-HOMEPAGE = "https://github.com/OWNER/unleak"
+HOMEPAGE = "https://github.com/johnnyjosta-go/unleak"
 RULES_URL = HOMEPAGE + "/blob/main/docs/rules.md#{anchor}"
 
 COLORS = {

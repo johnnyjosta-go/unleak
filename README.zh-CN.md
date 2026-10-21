@@ -13,7 +13,7 @@
 <p align="center">
   <a href="https://pypi.org/project/unleak/"><img alt="PyPI" src="https://img.shields.io/pypi/v/unleak?color=0ea5e9"></a>
   <a href="https://pypi.org/project/unleak/"><img alt="Python" src="https://img.shields.io/pypi/pyversions/unleak"></a>
-  <a href="https://github.com/OWNER/unleak/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/OWNER/unleak/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/johnnyjosta-go/unleak/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/johnnyjosta-go/unleak/actions/workflows/ci.yml/badge.svg"></a>
   <a href="#配合-ai-编程助手使用"><img alt="Claude Code plugin" src="https://img.shields.io/badge/Claude_Code-plugin-d97757"></a>
   <a href="#配合-ai-编程助手使用"><img alt="Agent Skills" src="https://img.shields.io/badge/Agent_Skills-compatible-6366f1"></a>
   <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/license-MIT-22c55e"></a>
@@ -64,7 +64,7 @@ unleak check train.py notebooks/
 连 pip 都不想用？分析器只依赖标准库：
 
 ```bash
-git clone https://github.com/OWNER/unleak
+git clone https://github.com/johnnyjosta-go/unleak
 python3 unleak/skills/leakage-audit/scripts/run_unleak.py check 你的项目目录
 ```
 
@@ -77,7 +77,7 @@ python3 unleak/skills/leakage-audit/scripts/run_unleak.py check 你的项目目�
 ### Claude Code：插件 = 审计技能 + 每次写文件自动检查
 
 ```
-/plugin marketplace add OWNER/unleak
+/plugin marketplace add johnnyjosta-go/unleak
 /plugin install unleak@unleak
 ```
 
@@ -104,7 +104,7 @@ python3 unleak/skills/leakage-audit/scripts/run_unleak.py check 你的项目目�
 技能遵循开放的 [Agent Skills](https://agentskills.io) 格式：
 
 ```bash
-npx skills add OWNER/unleak
+npx skills add johnnyjosta-go/unleak
 ```
 
 或者把 [`skills/leakage-audit`](skills/leakage-audit) 复制到你的 Agent 读取技能的目录（不装插件的 Claude Code 用
@@ -157,7 +157,7 @@ GitHub Action，会在 PR 的 diff 上直接标注问题，并生成汇总表：
 
 ```yaml
 - uses: actions/checkout@v4
-- uses: OWNER/unleak@v0
+- uses: johnnyjosta-go/unleak@v0
   with:
     paths: notebooks src
     fail-on: error        # error | warning | info | never
@@ -166,7 +166,7 @@ GitHub Action，会在 PR 的 diff 上直接标注问题，并生成汇总表：
 [pre-commit](https://pre-commit.com)：
 
 ```yaml
-- repo: https://github.com/OWNER/unleak
+- repo: https://github.com/johnnyjosta-go/unleak
   rev: v0.1.0
   hooks:
     - id: unleak

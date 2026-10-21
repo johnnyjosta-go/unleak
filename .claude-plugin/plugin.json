@@ -6,8 +6,8 @@
   "author": {
     "name": "unleak contributors"
   },
-  "homepage": "https://github.com/OWNER/unleak",
-  "repository": "https://github.com/OWNER/unleak",
+  "homepage": "https://github.com/johnnyjosta-go/unleak",
+  "repository": "https://github.com/johnnyjosta-go/unleak",
   "license": "MIT",
   "keywords": ["machine-learning", "data-leakage", "data-science", "scikit-learn", "jupyter", "linter", "mlops"]
 }
