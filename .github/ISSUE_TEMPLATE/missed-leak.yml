@@ -1,0 +1,19 @@
+name: Missed leak
+description: Code that leaks but unleak stays silent
+labels: ["missed leak"]
+body:
+  - type: textarea
+    id: code
+    attributes:
+      label: Code
+      description: A minimal snippet with the leak.
+      render: python
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: What leaks
+      description: Which rows or labels reach training, and roughly how much it inflates the metric if you measured it.
+    validations:
+      required: true

@@ -274,7 +274,8 @@ EVAL_SET_KWARGS = {
 TRAIN_TOKENS = {"train", "trn", "tr", "training", "trainset", "traindata"}
 TEST_TOKENS = {"test", "tst", "holdout", "heldout", "oos", "te", "testset",
                "testdata", "hold"}
-VAL_TOKENS = {"val", "valid", "validation", "dev", "vali", "va", "vl", "vld"}
+VAL_TOKENS = {"val", "valid", "validation", "dev", "vali", "va", "vl", "vld", "calib", "cal",
+              "calibration", "blend", "early", "es"}
 TARGET_NAME_RE = re.compile(
     r"^(y|Y|y_?\w*|Y_?\w*|\w*_y|target|targets|label|labels|"
     r"\w*_target|\w*_labels?|target_\w*|labels?_\w*)$"

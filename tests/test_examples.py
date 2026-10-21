@@ -8,7 +8,7 @@ import pytest
 from unleak.checker import check_file
 
 EXAMPLES = pathlib.Path(__file__).parents[1] / "examples"
-FILES = sorted(p for p in EXAMPLES.glob("*.py") if p.name != "run_all.py")
+FILES = sorted(p for p in EXAMPLES.glob("*.py") if p.name != "run_all.py" and not p.name.startswith("demo_"))
 
 
 def functions(path):

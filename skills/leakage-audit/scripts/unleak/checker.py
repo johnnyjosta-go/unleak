@@ -7,6 +7,9 @@ from dataclasses import asdict, dataclass, field
 
 from . import engine, rules, source
 
+# A file can only leak if it fits, splits, cross-validates or saves data.
+RELEVANT = ("fit", "split", "cross_val", "to_csv", "to_parquet", "save", "dump", "concat", "_train")
+
 SKIP_DIRS = {
     ".git", ".hg", ".svn", "__pycache__", ".ipynb_checkpoints", "node_modules",
     ".venv", "venv", "env", ".env", ".tox", ".nox", ".mypy_cache",
@@ -73,8 +76,12 @@ def _convert(raw: list, analysed: str, sources: dict[str, source.Source]) -> lis
     return out
 
 
+def relevant(src: source.Source) -> bool:
+    return src.tree is not None and not src.skip and any(word in src.text for word in RELEVANT)
+
+
 def check_source(src: source.Source) -> list[Finding]:
-    if src.tree is None or src.skip:
+    if not relevant(src):
         return []
     an = engine.analyze(src.tree, path=src.path)
     found = _convert(an.findings, src.path, {src.path: src})
@@ -115,14 +122,17 @@ def check_paths(paths: list[str], exclude: list[str] | None = None) -> tuple[lis
         if src.parse_error:
             errors.append(FileError(path, src.parse_error))
             continue
-        if src.tree is not None and not src.skip:
+        if relevant(src):
             sources[path] = src
 
     analyses = {p: engine.analyze(src.tree, path=p) for p, src in sources.items()}
 
     written: list[engine.Written] = [w for an in analyses.values() for w in an.writes]
     if written:
+        names = {os.path.basename(w.path) for w in written}
         for p, src in sources.items():
+            if not any(os.path.basename(r) in names for r in analyses[p].reads):
+                continue  # loads nothing another file saved
             external: dict[str, list] = {}
             for w in written:
                 if w.source == p:

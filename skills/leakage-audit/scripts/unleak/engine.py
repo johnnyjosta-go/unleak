@@ -324,6 +324,7 @@ class Analyzer:
         # normalised path or basename -> Written records from other files
         self.external = external or {}
         self.writes: list[Written] = []
+        self.reads: list[str] = []  # paths passed to loaders
         self.ids = itertools.count(1)
         self.imports: dict[str, str] = {}
         self.function_names: set[str] = set()
@@ -412,8 +413,7 @@ class Analyzer:
                 if ev.tags & test_tags:
                     self.report(
                         "UL203", node,
-                        "early stopping / best-iteration selection is driven by the test set, "
-                        "and the same test set is used to report the final score",
+                        "early stopping is driven by the test set that is also used to report the score",
                     )
                     break
         for loop in self.loops.values():
@@ -452,10 +452,9 @@ class Analyzer:
             "UL101": f"{call} is fitted on rows that are later used for evaluation",
             "UL102": f"{call} selects features using the labels of rows that are later used for evaluation",
             "UL103": f"{call} creates synthetic samples from rows that end up in the evaluation data",
-            "UL104": f"{call} resamples before the split, so the evaluation data no longer has the real class balance",
+            "UL104": f"{call} rebalances classes before the split, so test metrics use a fake class balance",
             "UL105": f"{call} learns target statistics from rows that are later used for evaluation",
-            "UL106": f"{call} is computed over all rows, including rows that later become test data, "
-                     "and is used to transform the features before the split",
+            "UL106": f"{call} is computed over all rows (test rows included) and used to transform features",
             "UL107": f"{call} is fitted on train and test data combined",
         }[rule]
 
@@ -1179,6 +1178,7 @@ class Scope:
             role = K.path_role(path) if path else None
             v = self.new_root(name, role)
             if path:
+                self.an.reads.append(path)
                 v = self._import_written(v, path)
             return v
         if name in WRITE_FUNCS and qual.split(".", 1)[0] in WRITE_FUNCS[name]:
@@ -1480,7 +1480,7 @@ class Scope:
             kind = K.SELECTOR
         ev = FitEvent(next(self.an.ids), kind, est.cls, m, n, X)
         self.an.fit_events[ev.id] = ev
-        if X.roots and "test" in X.roles() and not ({"train", "val"} & X.roles()):
+        if X.roots and "test" in X.roles() and not ({"train", "val"} & X.roles()) and m != "partial_fit":
             if kind not in (K.STAT, K.STATELESS) and not (kind == K.ENCODER and X.target):
                 self.an.report(
                     "UL201", n,
@@ -1630,11 +1630,11 @@ class Scope:
                 loop.test_eval = True
                 traits.add(f"tm:{loop.id}")
         self.observe(v, n, "use")
-        traits.add("metric_value")
+        traits |= {"metric_value", "score"}
         return Val(roots=v.roots, tags=v.tags, fits=v.fits, traits=frozenset(traits))
 
     def stat_event(self, n: ast.AST, name: str, data: Val, supervised: bool, extra: list | None = None) -> Val:
-        if not data.roots:
+        if not data.roots or data.traits & {"score", "cv_score"}:
             return union(data, *(extra or []))
         kind = K.SELECTOR if supervised else K.STAT
         ev = FitEvent(next(self.an.ids), kind, name, name, n, data)

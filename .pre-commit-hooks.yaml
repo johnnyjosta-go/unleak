@@ -1,0 +1,7 @@
+- id: unleak
+  name: unleak (ML data leakage)
+  description: Find data leakage in machine-learning scripts and notebooks.
+  entry: unleak check --no-snippets
+  language: python
+  types_or: [python, jupyter]
+  require_serial: true

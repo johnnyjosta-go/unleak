@@ -1,0 +1,42 @@
+name: "unleak: ML data-leakage check"
+description: "Find data leakage in machine-learning code and notebooks: preprocessing or SMOTE before the split, target leakage, look-ahead features, tuning on the test set."
+author: "unleak contributors"
+branding:
+  icon: droplet
+  color: blue
+
+inputs:
+  paths:
+    description: "Files or directories to check, space-separated"
+    default: "."
+  fail-on:
+    description: "Fail the step at this severity or above: error, warning, info, never"
+    default: "error"
+  min-severity:
+    description: "Report findings at this severity or above: info, warning, error"
+    default: "warning"
+  sarif-file:
+    description: "Also write a SARIF report to this path (for github/codeql-action/upload-sarif)"
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Install unleak
+      shell: bash
+      run: python3 -m pip install --quiet --disable-pip-version-check "$GITHUB_ACTION_PATH"
+    - name: Check for data leakage
+      shell: bash
+      env:
+        UNLEAK_PATHS: ${{ inputs.paths }}
+        UNLEAK_FAIL_ON: ${{ inputs.fail-on }}
+        UNLEAK_MIN_SEVERITY: ${{ inputs.min-severity }}
+        UNLEAK_SARIF: ${{ inputs.sarif-file }}
+      run: |
+        # shellcheck disable=SC2086  # paths are intentionally word-split
+        unleak check $UNLEAK_PATHS --format github --min-severity "$UNLEAK_MIN_SEVERITY" --fail-on never
+        unleak check $UNLEAK_PATHS --format markdown --min-severity "$UNLEAK_MIN_SEVERITY" --fail-on never >> "$GITHUB_STEP_SUMMARY"
+        if [ -n "$UNLEAK_SARIF" ]; then
+          unleak check $UNLEAK_PATHS --format sarif --output "$UNLEAK_SARIF" --min-severity info --fail-on never
+        fi
+        unleak check $UNLEAK_PATHS --color never --no-snippets --min-severity "$UNLEAK_MIN_SEVERITY" --fail-on "$UNLEAK_FAIL_ON"

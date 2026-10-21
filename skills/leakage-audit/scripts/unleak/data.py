@@ -129,7 +129,7 @@ def check(train_path: str, test_path: str, target: str | None = None, group: str
                         out.append(_finding("UD004", os.path.basename(train_path),
                                             f"column '{col}' alone separates '{target}' with AUC {auc:.3f}"))
                 elif numeric_target:
-                    corr = x.corr(y.astype(float), method="spearman")
+                    corr = x.rank().corr(y.astype(float).rank())  # Spearman without scipy
                     if pd.notna(corr) and abs(corr) >= CORR_LIMIT:
                         out.append(_finding("UD004", os.path.basename(train_path),
                                             f"column '{col}' has rank correlation {corr:+.3f} with '{target}'"))

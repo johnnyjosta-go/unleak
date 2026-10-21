@@ -1,0 +1,33 @@
+name: False positive
+description: unleak flagged code that does not leak
+labels: ["false positive"]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks! False positives are the bugs we care about most. A minimal snippet that reproduces the finding is ideal.
+  - type: textarea
+    id: code
+    attributes:
+      label: Code
+      description: The smallest snippet that still triggers the finding.
+      render: python
+    validations:
+      required: true
+  - type: input
+    id: finding
+    attributes:
+      label: Finding
+      placeholder: "UL101 line 12: StandardScaler.fit_transform() is fitted on rows that are later used for evaluation"
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why this is not leakage
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: unleak version
+      placeholder: "unleak --version"
