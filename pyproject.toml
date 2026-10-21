@@ -1,0 +1,70 @@
+[build-system]
+requires = ["hatchling>=1.18"]
+build-backend = "hatchling.build"
+
+[project]
+name = "unleak"
+dynamic = ["version"]
+description = "Find data leakage in machine-learning code before your metrics lie to you. A linter and an agent skill for Claude Code, Codex and Cursor."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [{ name = "unleak contributors" }]
+keywords = [
+    "machine-learning", "data-leakage", "linter", "static-analysis", "scikit-learn",
+    "mlops", "reproducibility", "jupyter", "claude-code", "agent-skills",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Quality Assurance",
+]
+dependencies = []
+
+[project.optional-dependencies]
+data = ["pandas>=1.5", "numpy>=1.22"]
+dev = ["pytest>=7.0", "pandas>=1.5", "numpy>=1.22", "ruff>=0.5"]
+
+[project.scripts]
+unleak = "unleak.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/OWNER/unleak"
+Issues = "https://github.com/OWNER/unleak/issues"
+Changelog = "https://github.com/OWNER/unleak/blob/main/CHANGELOG.md"
+
+[tool.hatch.version]
+path = "skills/leakage-audit/scripts/unleak/__init__.py"
+
+# The package lives inside the agent skill so the skill is self-contained:
+# agents can run it with plain `python3`, no install needed.
+[tool.hatch.build.targets.wheel]
+packages = ["skills/leakage-audit/scripts/unleak"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "skills/", "tests/", "examples/", "docs/", "README.md", "README.zh-CN.md",
+    "LICENSE", "CHANGELOG.md", "pyproject.toml",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+norecursedirs = ["cases", ".*", "build", "dist"]
+pythonpath = ["skills/leakage-audit/scripts"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+extend-exclude = ["tests/cases", "examples"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = ["E501", "B905"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["unleak"]
