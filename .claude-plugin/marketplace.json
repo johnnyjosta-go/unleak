@@ -1,0 +1,14 @@
+{
+  "name": "unleak",
+  "description": "unleak: find data leakage in machine-learning code",
+  "owner": {
+    "name": "unleak contributors"
+  },
+  "plugins": [
+    {
+      "name": "unleak",
+      "source": "./",
+      "description": "Static analyzer + audit skill + write hook that catches data leakage in ML code and notebooks."
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/skills/leakage-audit/scripts/run_unleak.py\" hook",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

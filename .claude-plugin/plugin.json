@@ -1,0 +1,13 @@
+{
+  "name": "unleak",
+  "displayName": "unleak: ML data-leakage audit",
+  "version": "0.1.0",
+  "description": "Catches data leakage in machine-learning code (preprocessing or SMOTE before the split, target leakage, look-ahead features, tuning on the test set) with a static analyzer, an audit skill, and a hook that checks every .py/.ipynb Claude writes.",
+  "author": {
+    "name": "unleak contributors"
+  },
+  "homepage": "https://github.com/OWNER/unleak",
+  "repository": "https://github.com/OWNER/unleak",
+  "license": "MIT",
+  "keywords": ["machine-learning", "data-leakage", "data-science", "scikit-learn", "jupyter", "linter", "mlops"]
+}
