@@ -191,7 +191,7 @@ def markdown(findings: list[Finding], errors: list[FileError], files_checked: in
     if not findings:
         return f"### ✅ unleak: no data leakage found in {files_checked} file(s)\n"
     counts = summary_counts(findings)
-    head = ", ".join(f"{counts[s]} {s}" for s in ("error", "warning", "info") if counts[s])
+    head = ", ".join(f"{counts[s]} {s}{'s' if counts[s] != 1 else ''}" for s in ("error", "warning", "info") if counts[s])
     icon = {"error": "🔴", "warning": "🟡", "info": "🔵"}
     lines = [f"### unleak: {len(findings)} potential leak(s) ({head})", "",
              "| | Rule | Location | Problem |", "|---|---|---|---|"]
